@@ -25,11 +25,12 @@ PlasmaCore.Dialog {
     property bool moving: false
     property bool resizing: false
     property var activeScreenArea: {}
-    property int currentLayout: 0
+    property var currentLayout: []
     property int highlightedZone: -1
     property int activeScreen: 0
     property bool doAnimations: true
     property var modifierKeys: ["Alt", "AltGr", "Ctrl", "Hyper", "Meta", "Shift", "Super"]
+    property int currentScreen: 0
 
     // colors
     property string color_zone_border: "transparent"
@@ -57,7 +58,7 @@ PlasmaCore.Dialog {
             filterList: KWin.readConfig("filterList", ""), // filter list
             fadeDuration: KWin.readConfig("fadeDuration", 100), // animation duration in milliseconds
             osdTimeout: KWin.readConfig("osdTimeout", 1000), // timeout in milliseconds for hiding the OSD after switching layouts
-            layouts: JSON.parse(KWin.readConfig("layoutsJson", '[{"name": "Layout 1","padding": 0,"zones": [{"name": "1","x": 0,"y": 0,"height": 100,"width": 25},{"name": "2","x": 25,"y": 0,"height": 100,"width": 50},{"name": "3","x": 75,"y": 0,"height": 100,"width": 25}]}]')), // layouts
+            screens: JSON.parse(KWin.readConfig("layoutsJson", '[{"name": "Layout 1","padding": 0,"zones": [{"name": "1","x": 0,"y": 0,"height": 100,"width": 25},{"name": "2","x": 25,"y": 0,"height": 100,"width": 50},{"name": "3","x": 75,"y": 0,"height": 100,"width": 25}]}]')), // layouts
             alternateIndicatorStyle: KWin.readConfig("alternateIndicatorStyle", false), // alternate indicator style
             invertedMode: KWin.readConfig("invertedMode", false), // inverted mode
             modifierEnabled: KWin.readConfig("modifierEnabled", false), // modifier enabled
@@ -65,6 +66,10 @@ PlasmaCore.Dialog {
             npmbEnabled: KWin.readConfig("npmbEnabled", false), // npmb enabled
             npmbToggle: KWin.readConfig("npmbToggle", true), // toggle with non-primary mouse button
             npmbCycle: KWin.readConfig("npmbCycle", false), // cycle layouts with non-primary mouse button
+        }
+
+        for (let idx = 0; idx < config.screens.length; idx++) {
+            currentLayout[idx] = 0;
         }
 
         console.log("KZones: Config loaded: " + JSON.stringify(config))
@@ -81,7 +86,7 @@ PlasmaCore.Dialog {
             return
         }
 
-        // show OSD
+        // show OSDktop
         if (!config.alwaysShowLayoutName) layoutOsd.visible = false
 
         // update main item size (needed for boot time, and to reset after hiding)
@@ -97,9 +102,11 @@ PlasmaCore.Dialog {
     }
 
     function refreshActiveScreenArea() {
-        const activeScreen = workspace.activeClient
+        activeScreen = workspace.activeClient
             ? workspace.activeClient.screen
             : workspace.activeScreen
+
+        currentScreen = activeScreen
 
         // TODO FIXME this method will be removed in plasma 6 (see `kwin/**/workspace_wrapper.h`)
         activeScreenArea = workspace.clientArea(KWin.FullScreenArea, activeScreen, workspace.currentDesktop)
@@ -224,7 +231,7 @@ PlasmaCore.Dialog {
             return
         }
 
-        const zonesLength = config.layouts[currentLayout].zones.length
+        const zonesLength = config.screens[currentScreen].layouts[currentLayout[currentScreen]].zones.length
         if (zone > zonesLength) return
 
         console.log("KZones: Moving client " + client.resourceClass.toString() + " to zone " + zone)
@@ -279,8 +286,9 @@ PlasmaCore.Dialog {
             }
 
             //cycle through layouts
-            currentLayout = (currentLayout + 1) % config.layouts.length
+            currentLayout[currentScreen] = (currentLayout[currentScreen] + 1) % config.screens[currentScreen].layouts.length
 
+            mainDialog.reloadOsd()
             // Reset zones of clients
             resetAllClientZones()
 
@@ -302,7 +310,7 @@ PlasmaCore.Dialog {
                 moveClientToZone()
                 return
             }
-            const zonesLength = config.layouts[currentLayout].zones.length
+            const zonesLength = config.screens[currentScreen].layouts[currentLayout[currentScreen]].zones.length
             const nextZone = isForward 
                 ? (activeZone + 1) % zonesLength
                 : (activeZone - 1 + zonesLength) % zonesLength
@@ -437,7 +445,7 @@ PlasmaCore.Dialog {
                                 }
                                 if (config.npmbCycle) {
                                     highlightedZone = -1
-                                    currentLayout = (currentLayout + 1) % config.layouts.length
+                                    currentLayout[currentScreen] = (currentLayout[currentScreen] + 1) % config.screens[currentScreen].layouts.length
                                 }                    
                             }
                             break
@@ -512,8 +520,8 @@ PlasmaCore.Dialog {
                         t += `X: ${workspace.activeClient.geometry.x}, Y: ${workspace.activeClient.geometry.y}, Width: ${workspace.activeClient.geometry.width}, Height: ${workspace.activeClient.geometry.height}\n`
                         t += `Previous Zone: ${workspace.activeClient.zone}\n`
                         t += `Highlighted Zone: ${highlightedZone}\n`
-                        t += `Layout: ${currentLayout}\n`
-                        t += `Zones: ${config.layouts[currentLayout].zones.map(z => z.name).join(', ')}\n`
+                        t += `Layout: ${currentLayout[currentScreen]}\n`
+                        t += `Zones: ${config.screens[currentScreen].layouts[currentLayout[currentScreen]].zones.map(z => z.name).join(', ')}\n`
                         t += `Polling Rate: ${config.pollingRate}ms\n`
                         t += `Moving: ${moving}\n`
                         t += `Resizing: ${resizing}\n`
@@ -533,7 +541,7 @@ PlasmaCore.Dialog {
         Rectangle {
             id: layoutOsd
             visible: true
-            opacity: config.layouts[currentLayout].name ? 1 : 0
+            opacity: config.screens[currentScreen].layouts[currentLayout[currentScreen]].name ? 1 : 0
             x: activeScreenArea.x + activeScreenArea.width / 2 - width / 2
             y: activeScreenArea.y + activeScreenArea.height - 150
             width: layoutName.paintedWidth + 30
@@ -548,7 +556,7 @@ PlasmaCore.Dialog {
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 color: 'white'
-                text: config.layouts[currentLayout].name
+                text: config.screens[currentScreen].layouts[currentLayout[currentScreen]].name
                 font.pixelSize: 24
             }
         }
@@ -556,7 +564,7 @@ PlasmaCore.Dialog {
         // zones
         Repeater {
             id: repeater_zones
-            model: config.layouts[currentLayout].zones
+            model: config.screens[currentScreen].layouts[currentLayout[currentScreen]].zones
 
             // zone
             Rectangle {
@@ -571,7 +579,7 @@ PlasmaCore.Dialog {
                 border.width: 3
 
                 property int zoneIndex: index
-                property int zone_padding: config.layouts[currentLayout].padding || 0
+                property int zone_padding: config.screens[currentScreen].layouts[currentLayout[currentScreen]].padding || 0
 
                 //! keep this the first child
                 Rectangle {
@@ -606,7 +614,7 @@ PlasmaCore.Dialog {
                     // zone indicator part
                     Repeater {
                         id: indicators
-                        model: config.layouts[currentLayout].zones
+                        model: config.screens[currentScreen].layouts[currentLayout[currentScreen]].zones
 
                         Rectangle {
                             property int padding: config.alternateIndicatorStyle ? 0 : 3

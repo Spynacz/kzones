@@ -287,8 +287,7 @@ PlasmaCore.Dialog {
 
             //cycle through layouts
             currentLayout[currentScreen] = (currentLayout[currentScreen] + 1) % config.screens[currentScreen].layouts.length
-
-            mainDialog.reloadOsd()
+            
             // Reset zones of clients
             resetAllClientZones()
 
